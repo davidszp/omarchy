@@ -46,7 +46,8 @@ end
 local function reevaluate ()
   local source = Plugin.find ("standard-event-source")
   local device_om = source:call ("get-object-manager", "device")
-  for device in device_om:iterate () do
+  -- only ALSA cards were held; a Bluetooth headset in a call must keep its profile
+  for device in device_om:iterate { Constraint { "device.api", "=", "alsa" } } do
     source:call ("push-event", "select-profile", device, nil)
   end
   source:call ("schedule-rescan", "default-nodes")
@@ -129,6 +130,8 @@ SimpleEventHook {
     -- a device picked during the hold applies now, not when the hold ends
     if configured_at_hold and
         configured_default (metadata, def_node_type) ~= configured_at_hold [def_node_type] then
+      -- forgotten, so picking the original device back applies too
+      configured_at_hold [def_node_type] = nil
       return
     end
 
