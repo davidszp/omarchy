@@ -16,6 +16,32 @@ local RELEASE_DELAY_MS = 10000
 
 local holding = false
 local release_source = nil
+-- default.configured.* as the hold began; a change since is the user's own pick
+local configured_at_hold = nil
+
+local function default_metadata ()
+  local source = Plugin.find ("standard-event-source")
+  local metadata_om = source and source:call ("get-object-manager", "metadata")
+  return metadata_om and metadata_om:lookup { Constraint { "metadata.name", "=", "default" } }
+end
+
+local function configured_default (metadata, def_node_type)
+  local obj = metadata:find (0, "default.configured." .. def_node_type)
+  return obj and Json.Raw (obj):parse ().name or false
+end
+
+local function snapshot_configured ()
+  local metadata = default_metadata ()
+  if not metadata then
+    return nil
+  end
+
+  local configured = {}
+  for _, def_node_type in ipairs { "audio.sink", "audio.source", "video.source" } do
+    configured [def_node_type] = configured_default (metadata, def_node_type)
+  end
+  return configured
+end
 
 local function reevaluate ()
   local source = Plugin.find ("standard-event-source")
@@ -33,6 +59,7 @@ local function update ()
       release_source = nil
     end
     holding = true
+    configured_at_hold = snapshot_configured ()
   elseif holding and not release_source then
     release_source = Core.timeout_add (RELEASE_DELAY_MS, function ()
       release_source = nil
@@ -96,6 +123,12 @@ SimpleEventHook {
     local metadata = metadata_om:lookup { Constraint { "metadata.name", "=", "default" } }
     local obj = metadata and metadata:find (0, "default." .. def_node_type)
     if not obj then
+      return
+    end
+
+    -- a device picked during the hold applies now, not when the hold ends
+    if configured_at_hold and
+        configured_default (metadata, def_node_type) ~= configured_at_hold [def_node_type] then
       return
     end
 
